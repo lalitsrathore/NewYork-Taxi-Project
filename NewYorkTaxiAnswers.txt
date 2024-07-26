@@ -1,0 +1,142 @@
+DATA EXTRACTION:
+
+
+
+import requests
+from requests.exceptions import RequestException
+import time
+import os
+
+def download_file(url, local_filename):
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(local_filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+    except RequestException as e:
+        print(f"Error downloading {url}: {e}")
+        time.sleep(5)  # wait before retrying
+        download_file(url, local_filename)
+
+def main():
+    base_url = "https://s3.amazonaws.com/nyc-tlc/trip+data/"
+    file_names = ["yellow_tripdata_2019-01.csv", "yellow_tripdata_2019-02.csv", ...]  # List all files
+    for file_name in file_names:
+        download_file(base_url + file_name, file_name)
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+DATA PROCESSING:
+
+
+
+
+import pandas as pd
+
+def process_file(file_path):
+    df = pd.read_csv(file_path)
+    
+    # Remove rows with missing values
+    df.dropna(subset=['pickup_datetime', 'dropoff_datetime', 'trip_distance', 'fare_amount'], inplace=True)
+    
+    # Convert time columns
+    df['pickup_datetime'] = pd.to_datetime(df['pickup_datetime'])
+    df['dropoff_datetime'] = pd.to_datetime(df['dropoff_datetime'])
+    
+    # Derive new columns
+    df['trip_duration'] = (df['dropoff_datetime'] - df['pickup_datetime']).dt.total_seconds() / 60
+    df['average_speed'] = df['trip_distance'] / (df['trip_duration'] / 60)  # speed in miles per hour
+    
+    # Aggregate data
+    df['date'] = df['pickup_datetime'].dt.date
+    daily_metrics = df.groupby('date').agg({'trip_distance': 'sum', 'fare_amount': 'mean', 'trip_duration': 'mean', 'average_speed': 'mean'})
+    
+    return daily_metrics
+
+# Process each file and combine results
+def main():
+    all_metrics = pd.DataFrame()
+    for file_name in ["yellow_tripdata_2019-01.csv", "yellow_tripdata_2019-02.csv", ...]:
+        metrics = process_file(file_name)
+        all_metrics = pd.concat([all_metrics, metrics], axis=0)
+    
+    all_metrics.to_sql('taxi_data', 'sqlite:///taxi_data.db', if_exists='replace')
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+DATA LOADING:
+
+
+
+from sqlalchemy import create_engine
+
+def load_to_sqlite(df, db_path):
+    engine = create_engine(f'sqlite:///{db_path}')
+    df.to_sql('taxi_data', engine, if_exists='replace', index=False)
+
+
+
+
+
+DATA ANALYSIS AND REPORTING:
+
+
+
+-- Peak hours for taxi usage
+SELECT strftime('%H', pickup_datetime) AS hour, COUNT(*) AS num_trips
+FROM taxi_data
+GROUP BY hour
+ORDER BY num_trips DESC;
+
+-- Passenger count vs trip fare
+SELECT passenger_count, AVG(fare_amount) AS avg_fare
+FROM taxi_data
+GROUP BY passenger_count;
+
+-- Trends in usage over the year
+SELECT date, COUNT(*) AS num_trips
+FROM taxi_data
+GROUP BY date
+ORDER BY date;
+
+
+
+
+
+
+README FILE:
+
+
+
+# New York Taxi Data Processing
+
+## Project Overview
+This project involves designing a scalable data pipeline to process New York Taxi Trip data for the year 2019.
+
+## Environment Setup
+- Python 3.x
+- Libraries: pandas, requests, sqlalchemy
+
+## Running the Project
+1. Clone the repository.
+2. Install required packages: `pip install -r requirements.txt`
+3. Run the extraction script: `python extract_data.py`
+4. Process and load data: `python process_and_load.py`
+
+## Data Analysis
+- Queries to find peak hours, fare vs passenger count, and usage trends.
+- Visualizations using matplotlib.
